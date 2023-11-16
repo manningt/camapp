@@ -1,7 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
-refer to this documentation: https://github.com/libcamera-org/libcamera/blob/master/Documentation/guides/application-developer.rst
- */
+refer to this documentation: 
+https://github.com/libcamera-org/libcamera/blob/master/Documentation/guides/application-developer.rst
+*/
 
 #include <iomanip>
 #include <iostream>
@@ -13,9 +13,8 @@ refer to this documentation: https://github.com/libcamera-org/libcamera/blob/mas
 
 #define LOG(level, text) \
 	do                    \
-	{                     \
-		if (level <= 5)    \
-			std::clog << "Line_" << __LINE__ << ": " << text << std::endl; \
+	{ if (level <= 5)  \
+		{std::clog << "Line_" << __LINE__ << ": " << text << std::endl; } \
 	} while (0)
 
 
@@ -213,116 +212,30 @@ static void requestComplete(Request *request)
 	loop.callLater(std::bind(&processRequest, request));
 }
 
-/*
- * ----------------------------------------------------------------------------
- * Camera Naming.
- *
- * Applications are responsible for deciding how to name cameras, and present
- * that information to the users. Every camera has a unique identifier, though
- * this string is not designed to be friendly for a human reader.
- *
- * To support human consumable names, libcamera provides camera properties
- * that allow an application to determine a naming scheme based on its needs.
- *
- * In this example, we focus on the location property, but also detail the
- * model string for external cameras, as this is more likely to be visible
- * information to the user of an externally connected device.
- *
- * The unique camera ID is appended for informative purposes.
- */
-std::string cameraName(Camera *camera)
-{
-	const ControlList &props = camera->properties();
-	std::string name;
-
-	const auto &location = props.get(properties::Location);
-	if (location) {
-		switch (*location) {
-		case properties::CameraLocationFront:
-			name = "Internal front camera";
-			break;
-		case properties::CameraLocationBack:
-			name = "Internal back camera";
-			break;
-		case properties::CameraLocationExternal:
-			name = "External camera";
-			const auto &model = props.get(properties::Model);
-			if (model)
-				name = " '" + *model + "'";
-			break;
-		}
-	}
-
-	name += " (" + camera->id() + ")";
-
-	return name;
-}
-
 int main()
 {
 	libcamera::logSetLevel("RPI", "DEBUG");
 	libcamera::logSetLevel("Camera", "DEBUG");
 
-	/*
-	 * --------------------------------------------------------------------
-	 * Create a Camera Manager.
-	 *
-	 * The Camera Manager is responsible for enumerating all the Camera
-	 * in the system, by associating Pipeline Handlers with media entities
-	 * registered in the system.
-	 *
-	 * The CameraManager provides a list of available Cameras that
-	 * applications can operate on.
-	 *
-	 * When the CameraManager is no longer to be used, it should be deleted.
-	 * We use a unique_ptr here to manage the lifetime automatically during
-	 * the scope of this function.
-	 *
-	 * There can only be a single CameraManager constructed within any
-	 * process space.
-	 */
+	// the camera manager provides a list of available cameras:
 	std::unique_ptr<CameraManager> cm = std::make_unique<CameraManager>();
 	cm->start();
 
-	/*
-	 * Just as a test, generate names of the Cameras registered in the
-	 * system, and list them.
-	 */
-	for (auto const &camera : cm->cameras())
-		std::cout << "Camera Name: " << cameraName(camera.get()) << std::endl;
-
-	/*
-	 * --------------------------------------------------------------------
-	 * Camera
-	 *
-	 * Camera are entities created by pipeline handlers, inspecting the
-	 * entities registered in the system and reported to applications
-	 * by the CameraManager.
-	 *
-	 * In general terms, a Camera corresponds to a single image source
-	 * available in the system, such as an image sensor.
-	 *
-	 * Application lock usage of Camera by 'acquiring' them.
-	 * Once done with it, application shall similarly 'release' the Camera.
-	 *
-	 * As an example, use the first available camera in the system after
-	 * making sure that at least one camera is available.
-	 *
-	 * Cameras can be obtained by their ID or their index, to demonstrate
-	 * this, the following code gets the ID of the first camera; then gets
-	 * the camera associated with that ID (which is of course the same as
-	 * cm->cameras()[0]).
-	 */
 	if (cm->cameras().empty()) {
-		std::cout << "No cameras were identified on the system."
-			  << std::endl;
+		LOG(2, "No cameras were identified on the system.");
 		cm->stop();
 		return EXIT_FAILURE;
 	}
 
-	std::string cameraId = cm->cameras()[0]->id();
+	std::string cameraId = cm->cameras()[0]->id(); //use camera 0
 	camera = cm->get(cameraId);
-	camera->acquire();
+	// int rc= camera->acquire();
+	if (camera->acquire() == EXIT_FAILURE) {
+		LOG(2, "Failed to acquire camera '" << cameraId << "'");
+		cm->stop();
+		return EXIT_FAILURE;
+	}
+	LOG(4, "Acquired camera '" << cameraId << "'");
 
 	/*
 	 * Stream
@@ -374,21 +287,7 @@ int main()
 	 * by the Camera depending on the Role the application has requested.
 	 */
 	StreamConfiguration &streamConfig = config->at(0);
-	std::cout << "Default Stream config: "
-		  << streamConfig.toString() << std::endl;
-
-	/*
-	 * Each StreamConfiguration parameter which is part of a
-	 * CameraConfiguration can be independently modified by the
-	 * application.
-	 *
-	 * In order to validate the modified parameter, the CameraConfiguration
-	 * should be validated -before- the CameraConfiguration gets applied
-	 * to the Camera.
-	 *
-	 * The CameraConfiguration validation process adjusts each
-	 * StreamConfiguration to a valid value.
-	 */
+	LOG(5, "Default Stream config '" << streamConfig.toString() << "'");
 
 	// refer to: https://www.libcamera.org/api-html/build_2include_2libcamera_2formats_8h_source.html
 	// const char pixFormat[] = "R8  "; //This didn't work, nor GREY nor YU16.  Must be something with OV9281 supporting code
@@ -398,18 +297,16 @@ int main()
 		int rc2 = streamConfig.pixelFormat.fromString(pixFormat);
 		std::cout << "pixelFormat.fromString return=" << rc2 << std::endl;
 	}
+	
 	streamConfig.bufferCount= NUMBER_OF_BUFFERS;	
 
-	/*
-	 * Validating a CameraConfiguration -before- applying it will adjust it
-	 * to a valid configuration which is as close as possible to the one
-	 * requested.
-	 */
-	config->validate();
-	std::cout << "Validated Stream Config: "
-		  << streamConfig.toString() << std::endl;
+	if (config->validate() == EXIT_FAILURE) {
+		LOG(2, "Failed to validate stream config '" << streamConfig.toString() << "'");
+		cm->stop();
+		return EXIT_FAILURE;
+	}
+	LOG(4, "Validated Stream Config '" << streamConfig.toString() << "'");
 
-	// LOG(4, "width=" << streamConfig.size.width);
 	cam_frame[WIDTH]= streamConfig.size.width;
 	cam_frame[HEIGHT]= streamConfig.size.height;
 
@@ -588,25 +485,12 @@ int main()
 	for (std::unique_ptr<Request> &request : requests)
 		camera->queueRequest(request.get());
 
-	/*
-	 * --------------------------------------------------------------------
-	 * Run an EventLoop
-	 *
-	 * In order to dispatch events received from the video devices, such
-	 * as buffer completions, an event loop has to be run.
-	 */
+	// In order to dispatch events received from the video devices, such as buffer completions, an event loop has to be run.
 	loop.timeout(TIMEOUT_SEC);
 	int ret = loop.exec();
 	std::cout << std::endl << "Capture ran for " << TIMEOUT_SEC << " seconds and "
 		  << "stopped with exit status: " << ret << std::endl;
 
-	/*
-	 * --------------------------------------------------------------------
-	 * Clean Up
-	 *
-	 * Stop the Camera, release resources and stop the CameraManager.
-	 * libcamera has now released all resources it owned.
-	 */
 	camera->stop();
 	allocator->free(stream);
 	delete allocator;
