@@ -1,6 +1,9 @@
 /*
 refer to this documentation: 
 https://github.com/libcamera-org/libcamera/blob/master/Documentation/guides/application-developer.rst
+
+https://git.libcamera.org/libcamera/simple-cam.git/tree/simple-cam.cpp
+
 */
 
 #include <iomanip>
@@ -22,7 +25,7 @@ https://github.com/libcamera-org/libcamera/blob/master/Documentation/guides/appl
 #include "event_loop.h"
 
 #define TIMEOUT_SEC 1
-#define NUMBER_OF_BUFFERS 4
+#define NUMBER_OF_BUFFERS 3
 
 using namespace libcamera;
 static std::shared_ptr<Camera> camera;
@@ -41,9 +44,6 @@ uint16_t cam_frame[2];
 static void processRequest(Request *request)
 {
 	static uint64_t previous_timestamp;
-	LOG(4, "Request completed: " << request->toString());
-	// std::cout << std::endl
-	// 	  << "Request completed: " << request->toString() << std::endl;
 
 	/* -
 	 * When a request has completed, it is populated with a metadata control
@@ -58,6 +58,8 @@ static void processRequest(Request *request)
 	 */
 
 	if (1) {
+		std::cout << std::endl;
+
 		const ControlList &requestMetadata = request->metadata();
 		for (const auto &ctrl : requestMetadata) {
 			const ControlId *id = controls::controls.at(ctrl.first);
@@ -65,10 +67,23 @@ static void processRequest(Request *request)
 
 			if (/*1 || */ id->name() == "ExposureTime")
 			{
-				std::cout << "\t" << id->name() << " = " << value.toString()
-					<< std::endl;
+				LOG(4, "Request completed: " << request->toString() << "\t" << id->name() << " = " << value.toString());
 			}
 		}
+		/* request->metadata:
+			AnalogueGain = 15.500000
+			SensorBlackLevels = [ 4096, 4096, 4096, 4096 ]
+			AeEnable = false
+			FrameDuration = 118991
+			Lux = 0.137078
+			FrameDurationLimits = [ 119000, 121000 ]
+			AeLocked = false
+			ExposureTime = 19992
+			DigitalGain = 4.000000
+			FocusFoM = 826
+			ScalerCrop = (0, 0)/1280x800
+			SensorTimestamp = 8053392323000
+		*/
 	}
 
 	/*
@@ -83,33 +98,24 @@ static void processRequest(Request *request)
 	 */
 	const Request::BufferMap &buffers = request->buffers();
 	for (auto bufferPair : buffers) {
-		// Stream *stream = bufferPair.first;
-		// std::cout << "processRequest stream: "
-		//   << stream->configuration << std::endl;
-
 		FrameBuffer *buffer = bufferPair.second;
 		const FrameMetadata &metadata = buffer->metadata();
 
 		if (previous_timestamp != 0)
-			std::cout << " seq: " << std::setw(4) << std::setfill('0') << metadata.sequence
-				<< " delta= " << (metadata.timestamp-previous_timestamp)/1000 << " bytesused: ";
+			LOG(4, " seq: " << std::setw(4) << std::setfill('0') << metadata.sequence
+				<< " delta= " << (metadata.timestamp-previous_timestamp)/1000);
+
 		previous_timestamp= metadata.timestamp;
 
-		if (1) {
-			// Print some information about the buffer which has completed.
-			// std::cout << " seq: " << std::setw(4) << std::setfill('0') << metadata.sequence
-			// 	<< " timestamp: " << metadata.timestamp
-			// 	<< " bytesused: ";
-
-			unsigned int nplane = 0;
+		if (0) {
+			unsigned int planeNumber= 0;
+			unsigned int planeSize[4];
+			// iterate through planes:
 			for (const FrameMetadata::Plane &plane : metadata.planes())
-			{
-				std::cout << plane.bytesused;
-				if (++nplane < metadata.planes().size())
-					std::cout << "/";
-			}
-			std::cout << std::endl;
-		}
+				planeSize[planeNumber++]= plane.bytesused;
+
+			LOG(4, "     bytesused: " << unsigned(planeSize[0]) << "/" << unsigned(planeSize[1]) << "/" << unsigned(planeSize[2]));
+	}
 
 		// std::vector<libcamera::Span<uint8_t>> LibcameraApp::Mmap(FrameBuffer *buffer) const
 		// {
@@ -133,8 +139,6 @@ static void processRequest(Request *request)
 		// const std::vector<libcamera::Span<uint8_t>> spanner = mapped_buffers_[0];
 		// uint8_t * mem= (uint8_t *)(mapped_buffers_[0].data());
 
-		// #define OV9281_WIDTH 1280
-		// #define OV9281_HEIGHT 800
 		uint8_t * ptr= NULL;
 		for (auto i= 0; i < NUMBER_OF_BUFFERS; i++)
 		{
@@ -158,7 +162,7 @@ static void processRequest(Request *request)
 			intensity_average= intensity_sum/(cam_frame[WIDTH]*cam_frame[HEIGHT]);
 			if (intensity_average > 0)
 			{
-				LOG(4, "Average intensity=" << intensity_average << "Saving file.");
+				LOG(4, "Average intensity=" << intensity_average << "  Saving file.");
 				char save_file_path[64];
 				sprintf(save_file_path, "/run/shm/test.dat"); //, filename, cam_hostname);
 				FILE * file_ptr = fopen(save_file_path,"wb");
@@ -168,10 +172,6 @@ static void processRequest(Request *request)
 				fclose(file_ptr);
 			}
 		}
-
-		/* -
-		 * Image data can be accessed here, but the FrameBuffer must be mapped by the application
-		 */
 
 		/* TOM:
 			? can the stream be retrieved from the buffer (comment out line)
@@ -185,9 +185,11 @@ static void processRequest(Request *request)
 
 	}
 
-	/* Re-queue the Request to the camera. */
-	request->reuse(Request::ReuseBuffers);
-	camera->queueRequest(request);
+	//Re-queue the Request to the camera
+	if (1) {
+		request->reuse(Request::ReuseBuffers);
+		camera->queueRequest(request);
+	}
 }
 
 /*
@@ -379,24 +381,6 @@ int main()
 		}
 	}
 
-	/*
-	 * --------------------------------------------------------------------
-	 * Frame Capture
-	 *
-	 * libcamera frames capture model is based on the 'Request' concept.
-	 * For each frame a Request has to be queued to the Camera.
-	 *
-	 * A Request refers to (at least one) Stream for which a Buffer that
-	 * will be filled with image data shall be added to the Request.
-	 *
-	 * A Request is associated with a list of Controls, which are tunable
-	 * parameters (similar to v4l2_controls) that have to be applied to
-	 * the image.
-	 *
-	 * Once a request completes, all its buffers will contain image data
-	 * that applications can access and for each of them a list of metadata
-	 * properties that reports the capture parameters applied to the image.
-	 */
 	std::vector<std::unique_ptr<Request>> requests;
 	//create a request per buffer
 	for (unsigned int i = 0; i < buffers.size(); ++i) {
