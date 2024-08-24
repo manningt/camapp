@@ -25,7 +25,7 @@ https://git.libcamera.org/libcamera/simple-cam.git/tree/simple-cam.cpp
 #include "event_loop.h"
 
 #define TIMEOUT_SEC 1
-#define NUMBER_OF_BUFFERS 3
+#define NUMBER_OF_BUFFERS 8
 
 using namespace libcamera;
 static std::shared_ptr<Camera> camera;
@@ -411,15 +411,15 @@ int main()
 		}
 
 		// controls.set(controls::ExposureCustom, true); //this causes an assert
+		int set_exposure_time= 20000;
 		if (i & 0x1)
-		{
-			controls.set(controls::ExposureTime, 9000); //microseconds
-			// std::cout << "Buffer " << i << " expos=9000" << std::endl;
-		} else
-		{
-			controls.set(controls::ExposureTime, 20000);
-			// std::cout << "Buffer " << i << " expos=20000" << std::endl;
+			set_exposure_time= 9000;
+		controls.set(controls::ExposureTime, set_exposure_time);
+		if (0) {
+			std::optional<int> get_exposure_time= controls.get(controls::ExposureTime);
+			std::cout << "Buffer " << i << " expos=" << *get_exposure_time << " microseconds" <<std::endl;
 		}
+		
 		// set the frame spacing
 		std::int64_t value_pair[2] = {119000, 121000}; //lower, upper bounds in microseconds
 		controls.set(libcamera::controls::FrameDurationLimits, libcamera::Span<const std::int64_t, 2>(value_pair));
