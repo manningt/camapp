@@ -67,6 +67,8 @@ static void processRequest(Request *request)
 
 			if (/*1 || */ id->name() == "ExposureTime")
 			{
+				// https://github.com/raspberrypi/libcamera/blob/main/src/libcamera/request.cpp
+				//Request(2:C:0/1:0) sequence:Status:PendingSize/buffers_size:cookie where Status of C is completed
 				LOG(4, "Request completed: " << request->toString() << "\t" << id->name() << " = " << value.toString());
 			}
 		}
@@ -107,14 +109,14 @@ static void processRequest(Request *request)
 
 		previous_timestamp= metadata.timestamp;
 
-		if (0) {
+		if (1) {
 			unsigned int planeNumber= 0;
 			unsigned int planeSize[4];
 			// iterate through planes:
 			for (const FrameMetadata::Plane &plane : metadata.planes())
 				planeSize[planeNumber++]= plane.bytesused;
 
-			LOG(4, "     bytesused: " << unsigned(planeSize[0]) << "/" << unsigned(planeSize[1]) << "/" << unsigned(planeSize[2]));
+			LOG(5, "     bytesused: " << unsigned(planeSize[0]) << "/" << unsigned(planeSize[1]) << "/" << unsigned(planeSize[2]));
 	}
 
 		// std::vector<libcamera::Span<uint8_t>> LibcameraApp::Mmap(FrameBuffer *buffer) const
@@ -186,7 +188,7 @@ static void processRequest(Request *request)
 	}
 
 	//Re-queue the Request to the camera
-	if (1) {
+	if (0) {
 		request->reuse(Request::ReuseBuffers);
 		camera->queueRequest(request);
 	}
@@ -237,7 +239,7 @@ int main()
 		cm->stop();
 		return EXIT_FAILURE;
 	}
-	LOG(4, "Acquired camera '" << cameraId << "'");
+	LOG(5, "Acquired camera '" << cameraId << "'");
 
 	/*
 	 * Stream
@@ -271,14 +273,18 @@ int main()
 	 * of the system (such as DMA engines, scalers, format converters) to
 	 * the different image streams an application has requested.
 	 *
-	 * Depending on the system characteristics, some combinations of
-	 * sizes, formats and stream usages might or might not be possible.
+	 * https://libcamera.org/api-html/namespacelibcamera.html#a295d1f5e7828d95c0b0aabc0a8baac03
+	 *   ViewFinder: didn't switch between exposure times
+	 *   Raw: didn't capture?
+	 *   VideoRecording: switched between exposure times, but always used the same buffer
+	 *   Still: didn't test
 	 *
-	 * A Camera produces a CameraConfigration based on a set of intended
-	 * roles for each Stream the application requires.
 	 */
+	enum StreamRole SelectedStreamRole;
+	SelectedStreamRole= StreamRole::VideoRecording;
+	// LOG(4, "SelectedStreamRole= " << SelectedStreamRole);
 	std::unique_ptr<CameraConfiguration> config =
-		camera->generateConfiguration( { StreamRole::StillCapture} ); //::Raw instead of ::Viewfinder; Raw didn't do a capture
+		camera->generateConfiguration( { SelectedStreamRole} );
 
 	/*
 	 * The CameraConfiguration contains a StreamConfiguration instance
@@ -297,7 +303,7 @@ int main()
 	{
 		const char pixFormat[] = "GREY";
 		int rc2 = streamConfig.pixelFormat.fromString(pixFormat);
-		std::cout << "pixelFormat.fromString return=" << rc2 << std::endl;
+		LOG(5, "pixelFormat.fromString return=" << rc2);
 	}
 	
 	streamConfig.bufferCount= NUMBER_OF_BUFFERS;	
@@ -307,7 +313,7 @@ int main()
 		cm->stop();
 		return EXIT_FAILURE;
 	}
-	LOG(4, "Validated Stream Config '" << streamConfig.toString() << "'");
+	LOG(4, "Validated Stream Config '" << streamConfig.toString() << "'" << "with SelectedStreamRole= " << SelectedStreamRole);
 
 	cam_frame[WIDTH]= streamConfig.size.width;
 	cam_frame[HEIGHT]= streamConfig.size.height;
@@ -343,9 +349,7 @@ int main()
 			std::cerr << "Can't allocate buffers" << std::endl;
 			return EXIT_FAILURE;
 		}
-
-		size_t allocated = allocator->buffers(cfg.stream()).size();
-		std::cout << "Allocated " << allocated << " buffers for stream" << std::endl;
+		LOG(4, "Allocated " << allocator->buffers(cfg.stream()).size() << " buffers for stream");
 	}
 
 	// Stream *stream = streamConfig.stream();  //stream was made a global so buffers could be accessed
