@@ -284,8 +284,7 @@ int main()
 	 */
 	enum StreamRole SelectedStreamRole;
 	SelectedStreamRole= StreamRole::VideoRecording;
-	std::unique_ptr<CameraConfiguration> config =
-		camera->generateConfiguration( { SelectedStreamRole} );
+	std::unique_ptr<CameraConfiguration> config = camera->generateConfiguration( { SelectedStreamRole} );
 
 	/*
 	 * The CameraConfiguration contains a StreamConfiguration instance
@@ -296,27 +295,18 @@ int main()
 	 * by the Camera depending on the Role the application has requested.
 	 */
 	StreamConfiguration &streamConfig = config->at(0);
-	LOG(5, "Default Stream config '" << streamConfig.toString() << "'");
-
+	streamConfig.bufferCount= NUMBER_OF_BUFFERS;
+	streamConfig.size = {1280, 800};
 	// refer to: https://www.libcamera.org/api-html/build_2include_2libcamera_2formats_8h_source.html
-	// const char pixFormat[] = "R8  "; //This didn't work, nor GREY nor YU16.
-	if (0)
-	{
-		const char pixFormat[] = "GREY";
-		int rc2 = streamConfig.pixelFormat.fromString(pixFormat);
-		LOG(5, "pixelFormat.fromString return=" << rc2);
-	}
-	
-	streamConfig.bufferCount= NUMBER_OF_BUFFERS;	
+	// libcamera::formats::R8 doesn't validate, YUV420 do is the default
+	streamConfig.pixelFormat = libcamera::formats::YUV420;
 
 	if (config->validate() == EXIT_FAILURE) {
 		LOG(2, "Failed to validate stream config '" << streamConfig.toString() << "'");
 		cm->stop();
 		return EXIT_FAILURE;
 	}
-	LOG(4, "Validated Stream Config '" << streamConfig.toString() << "'"
-		<< "with SelectedStreamRole= " << SelectedStreamRole
-		<< " width= " << streamConfig.size.width << " height= " << streamConfig.size.height);
+	LOG(4, "Validated Stream Config '" << streamConfig.toString() << "'");
 
 	cam_frame[WIDTH]= streamConfig.size.width;
 	cam_frame[HEIGHT]= streamConfig.size.height;
@@ -419,7 +409,6 @@ int main()
 				<< std::endl;
 		}
 
-		// controls.set(controls::ExposureCustom, true); //this causes an assert
 		int set_exposure_time= 20000;
 		if (i & 0x1)
 			set_exposure_time= 9000;
