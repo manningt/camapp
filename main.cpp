@@ -16,7 +16,7 @@ https://git.libcamera.org/libcamera/simple-cam.git/tree/simple-cam.cpp
 
 #define LOG(level, text) \
 	do                    \
-	{ if (level <= 5)  \
+	{ if (level <= 4)  \
 		{std::clog << "Line_" << __LINE__ << ": " << text << std::endl; } \
 	} while (0)
 
@@ -104,7 +104,7 @@ static void processRequest(Request *request)
 		const FrameMetadata &metadata = buffer->metadata();
 
 		if (previous_timestamp != 0)
-			LOG(4, " seq: " << std::setw(4) << std::setfill('0') << metadata.sequence
+			LOG(5, " seq: " << std::setw(4) << std::setfill('0') << metadata.sequence
 				<< " delta= " << (metadata.timestamp-previous_timestamp)/1000);
 
 		previous_timestamp= metadata.timestamp;
@@ -142,12 +142,14 @@ static void processRequest(Request *request)
 		// uint8_t * mem= (uint8_t *)(mapped_buffers_[0].data());
 
 		uint8_t * ptr= NULL;
+		uint8_t bufferNumber= 0;
 		for (auto i= 0; i < NUMBER_OF_BUFFERS; i++)
 		{
 			if (mapped_buffer_ptr[i] != NULL)
 			{
 				ptr= mapped_buffer_ptr[i];
-				LOG(4, "using buffer #" << unsigned(i) << " address="	<< std::hex << size_t(ptr) << std::dec);
+				bufferNumber= i;
+				LOG(5, "using buffer #" << unsigned(i) << " address="	<< std::hex << size_t(ptr) << std::dec);
 				break;
 			}
 		}
@@ -164,9 +166,9 @@ static void processRequest(Request *request)
 			intensity_average= intensity_sum/(cam_frame[WIDTH]*cam_frame[HEIGHT]);
 			if (intensity_average > 0)
 			{
-				LOG(4, "Average intensity=" << intensity_average << "  Saving file.");
+				LOG(4, "Average intensity=" << intensity_average << " Saving file... bufferNumber=" << bufferNumber);
 				char save_file_path[64];
-				sprintf(save_file_path, "/run/shm/test.dat"); //, filename, cam_hostname);
+				sprintf(save_file_path, "/run/shm/test%d.dat", metadata.sequence); //, filename, cam_hostname);
 				FILE * file_ptr = fopen(save_file_path,"wb");
 				if (file_ptr == NULL)
 					LOG(2,"Error on fileopen");
@@ -282,7 +284,6 @@ int main()
 	 */
 	enum StreamRole SelectedStreamRole;
 	SelectedStreamRole= StreamRole::VideoRecording;
-	// LOG(4, "SelectedStreamRole= " << SelectedStreamRole);
 	std::unique_ptr<CameraConfiguration> config =
 		camera->generateConfiguration( { SelectedStreamRole} );
 
@@ -298,7 +299,7 @@ int main()
 	LOG(5, "Default Stream config '" << streamConfig.toString() << "'");
 
 	// refer to: https://www.libcamera.org/api-html/build_2include_2libcamera_2formats_8h_source.html
-	// const char pixFormat[] = "R8  "; //This didn't work, nor GREY nor YU16.  Must be something with OV9281 supporting code
+	// const char pixFormat[] = "R8  "; //This didn't work, nor GREY nor YU16.
 	if (0)
 	{
 		const char pixFormat[] = "GREY";
@@ -313,7 +314,9 @@ int main()
 		cm->stop();
 		return EXIT_FAILURE;
 	}
-	LOG(4, "Validated Stream Config '" << streamConfig.toString() << "'" << "with SelectedStreamRole= " << SelectedStreamRole);
+	LOG(4, "Validated Stream Config '" << streamConfig.toString() << "'"
+		<< "with SelectedStreamRole= " << SelectedStreamRole
+		<< " width= " << streamConfig.size.width << " height= " << streamConfig.size.height);
 
 	cam_frame[WIDTH]= streamConfig.size.width;
 	cam_frame[HEIGHT]= streamConfig.size.height;
@@ -388,7 +391,7 @@ int main()
 	std::vector<std::unique_ptr<Request>> requests;
 	//create a request per buffer
 	for (unsigned int i = 0; i < buffers.size(); ++i) {
-		std::unique_ptr<Request> request = camera->createRequest();
+		std::unique_ptr<Request> request = camera->createRequest(i+10); //the argument (i+10) is a user-generated cookie
 		if (!request)
 		{
 			std::cerr << "Can't create request" << std::endl;
@@ -403,6 +406,8 @@ int main()
 				  << std::endl;
 			return EXIT_FAILURE;
 		}
+		// log request & buffer addresses in order to determine request that is being processed
+		LOG(4, "request=" << i << " address=" << std::hex << &request << " buffer address=" << std::hex << buffer.get() << std::dec);
 
 		//Controls can be added to a request on a per frame basis.
 		ControlList &controls = request->controls();
